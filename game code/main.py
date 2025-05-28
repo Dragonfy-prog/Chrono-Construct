@@ -5,7 +5,7 @@ import json
 
 py.init()
 
-#variables
+#variables:
 rows = 15
 cols = 15
 tile_size = 64
@@ -13,6 +13,18 @@ SC_WIDTH = cols * tile_size
 SC_HEIGHT = rows * tile_size
 FPS = 120
 
+#the turret class
+class Turret(py.sprite.Sprite):
+    def __init__(self, image, tile_x, tile_y):
+        py.sprite.Sprite.__init__(self)
+        self.tile_x = tile_x
+        self.tile_y = tile_y
+        #calculate the coorfinates of the center
+        self.x = (self.tile_x + 0.5) * tile_size
+        self.y = (self.tile_y + 0.5) * tile_size
+        self.image = image
+        self.rect = self.image.get_rect()
+        self.rect.center = (self.x, self.y)
 
 #the enemy class
 class Enemy(py.sprite.Sprite):
@@ -82,9 +94,6 @@ class World():
     
         
 
-
-
-
 #initialize the clock
 clock = py.time.Clock()
 
@@ -96,23 +105,33 @@ py.display.set_caption("Chrono Construct")
 #images
 #level map
 map_image = py.image.load("assets/levels/tile_map_for_Chrono_construct.png").convert_alpha()
-#enemy 
-enemy_image = py.image.load("Game/assets/enemies/Golem_main.PNG").convert_alpha()
-enemy_image = py.transform.scale(enemy_image, (100, 150))
+#turret
+turret_image = py.image.load("assets/turrets/towerDefense_tilesheet - turret.PNG").convert_alpha()
+#enemies
+enemy_image = py.image.load("assets/enemies/towerDefense_tilesheet - enemy.PNG").convert_alpha()
+enemy_image = py.transform.scale(enemy_image, (100, 100))
 
-with open("Game/assets/levels/tile_map_for_Chrono_construct..tmj") as file:
+#load the level data
+with open("assets/levels/tile_map_for_Chrono_construct..tmj") as file:
     world_data = json.load(file)
 
     
+def create_turret(mouse_postition):
+    mouse_tile_x = mouse_postiton[0]// tile_size
+    mouse_tile_y = mouse_postiton[1]// tile_size
+    turret = Turret(turret_image, mouse_tile_x, mouse_tile_y)
+    turret_group.add(turret)
+
 #Create the world
 world = World(world_data, map_image)
 world.process_data()
 
-#enemy group
+#groups
 enemy_group = py.sprite.Group()
+turret_group = py.sprite.Group()
 
 
-
+#enemy initialization
 enemy = Enemy(world.waypoints, enemy_image)
 enemy_group.add(enemy)
 
@@ -121,12 +140,14 @@ enemy_group.add(enemy)
 #event loop
 run = True
 while run:
-
+    
+    #set the frame rate
     clock.tick(FPS)
 
+    #update the enemy
     enemy_group.update() 
 
-    
+    #fill the screen with white
     screen.fill((255, 255, 255))
 
     #draw the world
@@ -135,13 +156,25 @@ while run:
     #draw the enemy
     enemy_group.draw(screen)
 
-    py.draw.lines(screen, (0, 0, 0), False, world.waypoints)
-    
+    #draw the turret
+    turret_group.draw(screen)
 
+    
+    
+    #event handling
     for event in py.event.get():
 
         if event.type == py.QUIT:
             run = False
+        #mouse click to place turret
+        if event.type == py.MOUSEBUTTONDOWN and event.button == 1:
+            mouse_postiton = py.mouse.get_pos()
+            #to check if the mouse is over the map
+            if mouse_postiton[0] < SC_WIDTH and mouse_postiton[1] < SC_HEIGHT:
+                create_turret(mouse_postiton)
+        
+        
+    
     py.display.flip()
      
 
