@@ -9,22 +9,97 @@ py.init()
 rows = 15
 cols = 15
 tile_size = 64
+SIDE_PANEL = 300
 SC_WIDTH = cols * tile_size
 SC_HEIGHT = rows * tile_size
 FPS = 120
 
+#turret variables
+animation_steps = 8
+animation_delay = 15
+
+#the button class
+class Button():
+    def __init__(self, x, y, image, single_click):
+        self.image = image
+        self.rect = self.image.get_rect()
+        self.rect.topleft = (x, y)
+        self.clicked = False
+        self.single_click = single_click
+
+    def draw(self, surface):
+        action = False
+        #mouse position
+        pos = py.mouse.get_pos()
+
+        #mouseover and clicked conditions
+        if self.rect.collidepoint(pos):
+            if py.mouse.get_pressed()[0] == 1 and self.clicked == False:
+                action = True
+                #if bitton is single click then set to true
+                if self.single_click:
+                    self.clicked = True
+
+        if py.mouse.get_pressed()[0] == 0:
+            self.clicked = False
+            
+        #draw the button
+        surface.blit(self.image, self.rect)
+
+        return action
+
 #the turret class
 class Turret(py.sprite.Sprite):
-    def __init__(self, image, tile_x, tile_y):
+    def __init__(self, sprite_sheet, tile_x, tile_y):
         py.sprite.Sprite.__init__(self)
+        self.cooldown = 1500
+        self.last_shot = py.time.get_ticks()
+        #pos variables
+        self.tile_size = tile_size
         self.tile_x = tile_x
         self.tile_y = tile_y
         #calculate the coorfinates of the center
-        #self.x = (self.tile_x + 0.5) * tile_size
-        #self.y = (self.tile_y + 0.5) * tile_size
-        self.image = image
+        self.x = (self.tile_x + 0.5) * tile_size
+        self.y = (self.tile_y + 0.5) * tile_size
+
+        #animations
+        self.sprite_sheet = sprite_sheet
+        self.animation_list = self.load_images()
+        self.frame_index = 0
+        self.update_time = py.time.get_ticks()
+
+        #update image
+        self.image = self.animation_list[self.frame_index]
         self.rect = self.image.get_rect()
         self.rect.center = (self.x, self.y)
+
+    def load_images(self):
+        #extract images
+        size = self.sprite_sheet.get_height()
+        animation_list = []
+        for x in range(animation_steps):
+            temp_image = self.sprite_sheet.subsurface(x * size, 0, size, size)
+            animation_list.append(temp_image)
+        return animation_list
+    
+    def update(self):
+        if py.time.get_ticks() - self.last_shot > self.cooldown:
+            self.play_animation()
+
+
+    def play_animation(self):
+        #update image
+        self.image = self.animation_list[self.frame_index]
+        #check for time passed 
+        if py.time.get_ticks() - self.update_time > animation_delay:
+            self.update_time = py.time.get_ticks()
+            self.frame_index += 1
+            #check for animation finish
+            if self.frame_index >= len(self.animation_list):
+                self.frame_index = 0
+                #reset the cooldown
+                self.last_shot = py.time.get_ticks()
+
 
 #the enemy class
 class Enemy(py.sprite.Sprite):
@@ -102,18 +177,26 @@ clock = py.time.Clock()
 
 
 #screen setup
-screen = py.display.set_mode((SC_WIDTH, SC_HEIGHT))
+screen = py.display.set_mode((SC_WIDTH + SIDE_PANEL, SC_HEIGHT))
 py.display.set_caption("Chrono Construct")
 
+#game variables
+placing_turret = False
+
 #images
+
 #level map
 map_image = py.image.load("assets/levels/tile_map_for_Chrono_construct.png").convert_alpha()
+#turret spritesheet
+turret_sheet = py.image.load("assets/turrets/turret_1.png").convert_alpha()
 #turret
-turret_image = py.image.load("assets/turrets/towerDefense_tilesheet - turret.PNG").convert_alpha()
+turret_image = py.image.load("assets/turrets/turret.png").convert_alpha()
 #enemies
 enemy_image = py.image.load("assets/enemies/towerDefense_tilesheet - enemy.PNG").convert_alpha()
 enemy_image = py.transform.scale(enemy_image, (100, 100))
-
+#buttons
+turret_buy_button = py.image.load("assets/buttons/buy_turret.png").convert_alpha()
+cancel_button = py.image.load("assets/buttons/cancel.png").convert_alpha()
 #load the level data
 with open("assets/levels/tile_map_for_Chrono_construct..tmj") as file:
     world_data = json.load(file)
@@ -134,7 +217,7 @@ def create_turret(mouse_postiton):
         #if there is free space, create a turret
         if space_free == True:
 
-            turret = Turret(turret_image, mouse_tile_x, mouse_tile_y)
+            turret = Turret(turret_sheet, mouse_tile_x, mouse_tile_y)
             turret_group.add(turret)
 
 
@@ -151,8 +234,9 @@ turret_group = py.sprite.Group()
 enemy = Enemy(world.waypoints, enemy_image)
 enemy_group.add(enemy)
 
-
-
+#creating the buttons
+turret_button = Button(SC_WIDTH + 30, 120, turret_buy_button, True)
+cancel_button = Button(SC_WIDTH + 50, 180, cancel_button, True)
 #event loop
 run = True
 while run:
@@ -160,8 +244,9 @@ while run:
     #set the frame rate
     clock.tick(FPS)
 
-    #update the enemy
+    #update the groups
     enemy_group.update() 
+    turret_group.update()
 
     #fill the screen with white
     screen.fill((255, 255, 255))
@@ -175,6 +260,22 @@ while run:
     #draw the turret
     turret_group.draw(screen)
 
+    #draw the buttons
+    #button for placing turret
+    if turret_button.draw(screen):
+        placing_turret = True
+    #if placing turret then show cancel button
+    if placing_turret == True:
+        #show turret
+        cursor_rect = turret_image.get_rect()
+        cursor_postition = py.mouse.get_pos()
+        cursor_rect.center = cursor_postition
+        if cursor_postition[0] < SC_WIDTH:
+            screen.blit(turret_image, cursor_rect)
+
+        if cancel_button.draw(screen):
+            placing_turret = False
+
     
     #event handling
     for event in py.event.get():
@@ -186,7 +287,8 @@ while run:
             mouse_postiton = py.mouse.get_pos()
             #to check if the mouse is over the map
             if mouse_postiton[0] < SC_WIDTH and mouse_postiton[1] < SC_HEIGHT:
-                create_turret(mouse_postiton)
+                if placing_turret == True:
+                    create_turret(mouse_postiton)
         
         
     
