@@ -48,59 +48,6 @@ class Button():
 
         return action
 
-#the turret class
-class Turret(py.sprite.Sprite):
-    def __init__(self, sprite_sheet, tile_x, tile_y):
-        py.sprite.Sprite.__init__(self)
-        self.cooldown = 1500
-        self.last_shot = py.time.get_ticks()
-        #pos variables
-        self.tile_size = tile_size
-        self.tile_x = tile_x
-        self.tile_y = tile_y
-        #calculate the coorfinates of the center
-        self.x = (self.tile_x + 0.5) * tile_size
-        self.y = (self.tile_y + 0.5) * tile_size
-
-        #animations
-        self.sprite_sheet = sprite_sheet
-        self.animation_list = self.load_images()
-        self.frame_index = 0
-        self.update_time = py.time.get_ticks()
-
-        #update image
-        self.image = self.animation_list[self.frame_index]
-        self.rect = self.image.get_rect()
-        self.rect.center = (self.x, self.y)
-
-    def load_images(self):
-        #extract images
-        size = self.sprite_sheet.get_height()
-        animation_list = []
-        for x in range(animation_steps):
-            temp_image = self.sprite_sheet.subsurface(x * size, 0, size, size)
-            animation_list.append(temp_image)
-        return animation_list
-    
-    def update(self):
-        if py.time.get_ticks() - self.last_shot > self.cooldown:
-            self.play_animation()
-
-
-    def play_animation(self):
-        #update image
-        self.image = self.animation_list[self.frame_index]
-        #check for time passed 
-        if py.time.get_ticks() - self.update_time > animation_delay:
-            self.update_time = py.time.get_ticks()
-            self.frame_index += 1
-            #check for animation finish
-            if self.frame_index >= len(self.animation_list):
-                self.frame_index = 0
-                #reset the cooldown
-                self.last_shot = py.time.get_ticks()
-
-
 #the enemy class
 class Enemy(py.sprite.Sprite):
     def __init__(self, waypoints, image):
@@ -141,6 +88,106 @@ class Enemy(py.sprite.Sprite):
         self.image = py.transform.rotate(self.og_image, self.angle)
         self.rect = self.image.get_rect()
         self.rect.center = self.pos
+
+#the turret class
+class Turret(py.sprite.Sprite):
+    def __init__(self, sprite_sheet, tile_x, tile_y):
+        py.sprite.Sprite.__init__(self)
+        self.range = 100
+        self.cooldown = 1500
+        self.last_shot = py.time.get_ticks()
+        self.selected = False
+        self.target = None
+
+        #pos variables
+        self.tile_size = tile_size
+        self.tile_x = tile_x
+        self.tile_y = tile_y
+        #calculate the coorfinates of the center
+        self.x = (self.tile_x + 0.5) * tile_size
+        self.y = (self.tile_y + 0.5) * tile_size
+
+        #animations
+        self.sprite_sheet = sprite_sheet
+        self.animation_list = self.load_images()
+        self.frame_index = 0
+        self.update_time = py.time.get_ticks()
+
+        #update image
+        self.angle = 90
+        self.og_image = self.animation_list[self.frame_index]
+        self.image = py.transform.rotate(self.og_image, self.angle)
+        self.rect = self.image.get_rect()
+        self.rect.center = (self.x, self.y)
+
+        #create circle range
+        self.range_image = py.Surface((self.range * 2, self.range * 2))
+        self.range_image.fill((0, 0, 0,))
+        self.range_image.set_colorkey((0, 0, 0))
+        py.draw.circle(self.range_image, (255, 0, 0), (self.range, self.range), self.range)
+        self.range_image.set_alpha(100)
+        self.range_rect = self.range_image.get_rect()
+        self.range_rect.center = self.rect.center
+
+    def load_images(self):
+        #extract images
+        size = self.sprite_sheet.get_height()
+        animation_list = []
+        for x in range(animation_steps):
+            temp_image = self.sprite_sheet.subsurface(x * size, 0, size, size)
+            animation_list.append(temp_image)
+        return animation_list
+    
+    def update(self, enemy_group):
+        #play animation for target selection
+        if self.target:
+            self.play_animation()
+        else:
+            if py.time.get_ticks() - self.last_shot > self.cooldown:         
+                self.pick_target(enemy_group)
+
+        if py.time.get_ticks() - self.last_shot > self.cooldown:
+            self.play_animation()
+            self.pick_target(enemy_group)
+    
+    def pick_target(self, enemy_group):
+        #find an enemy for targeting
+        x_distance = 0
+        y_distance = 0
+        #check distance to each enemey to see if they are in range
+        for enemy in enemy_group:
+            x_distance = enemy.pos[0] - self.x
+            y_distance = enemy.pos[1] - self.y
+            distance = math.sqrt(x_distance ** 2 + y_distance ** 2)
+            if distance > self.range:
+                self.target = enemy
+                self.angle = math.degrees(math.atan2(-y_distance, x_distance))
+                
+
+    def play_animation(self):
+        #update image
+        self.og_image = self.animation_list[self.frame_index]
+        #check for time passed 
+        if py.time.get_ticks() - self.update_time > animation_delay:
+            self.update_time = py.time.get_ticks()
+            self.frame_index += 1
+            #check for animation finish
+            if self.frame_index >= len(self.animation_list):
+                self.frame_index = 0
+                #reset the cooldown
+                self.last_shot = py.time.get_ticks()
+                self.target = None
+
+    def draw(self, surface):
+        self.image = py.transform.rotate(self.og_image, self.angle - 90)
+        self.rect = self.image.get_rect()
+        self.rect.center = (self.x, self.y)
+        surface.blit(self.image, self.rect)
+        if self.selected:
+            surface.blit(self.range_image, self.range_rect)
+
+
+
    
 #the world class
 class World():
@@ -182,6 +229,7 @@ py.display.set_caption("Chrono Construct")
 
 #game variables
 placing_turret = False
+selected_turret = None
 
 #images
 
@@ -219,7 +267,16 @@ def create_turret(mouse_postiton):
 
             turret = Turret(turret_sheet, mouse_tile_x, mouse_tile_y)
             turret_group.add(turret)
-
+def select_turret(mouse_postiton):
+    mouse_tile_x = mouse_postiton[0]// tile_size
+    mouse_tile_y = mouse_postiton[1]// tile_size
+    for turret in turret_group:
+        if (mouse_tile_x, mouse_tile_y) == (turret.tile_x, turret.tile_y):
+            return turret
+        
+def clear_selection():
+    for turret in turret_group:
+        turret.selected = False
 
 #Create the world
 world = World(world_data, map_image)
@@ -246,7 +303,12 @@ while run:
 
     #update the groups
     enemy_group.update() 
-    turret_group.update()
+    turret_group.update(enemy_group)
+
+    #hilight the selcted turret
+    if selected_turret:
+        selected_turret.selected = True
+    
 
     #fill the screen with white
     screen.fill((255, 255, 255))
@@ -258,7 +320,8 @@ while run:
     enemy_group.draw(screen)
 
     #draw the turret
-    turret_group.draw(screen)
+    for turret in turret_group:
+        turret.draw(screen)
 
     #draw the buttons
     #button for placing turret
@@ -287,8 +350,13 @@ while run:
             mouse_postiton = py.mouse.get_pos()
             #to check if the mouse is over the map
             if mouse_postiton[0] < SC_WIDTH and mouse_postiton[1] < SC_HEIGHT:
+                #clear the selection of turret
+                selected_turret = None
+                clear_selection()
                 if placing_turret == True:
                     create_turret(mouse_postiton)
+                else:
+                    selected_turret = select_turret(mouse_postiton)
         
         
     
