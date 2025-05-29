@@ -20,8 +20,8 @@ class Turret(py.sprite.Sprite):
         self.tile_x = tile_x
         self.tile_y = tile_y
         #calculate the coorfinates of the center
-        self.x = (self.tile_x + 0.5) * tile_size
-        self.y = (self.tile_y + 0.5) * tile_size
+        #self.x = (self.tile_x + 0.5) * tile_size
+        #self.y = (self.tile_y + 0.5) * tile_size
         self.image = image
         self.rect = self.image.get_rect()
         self.rect.center = (self.x, self.y)
@@ -70,13 +70,16 @@ class Enemy(py.sprite.Sprite):
 #the world class
 class World():
     def __init__(self, data, map_image):
+        self.tile_map = []
         self.waypoints = []
         self.level_data = data 
         self.image = map_image
 
     def process_data(self):
         for layer in self.level_data["layers"]:
-            if layer["name"] == "waypoints":
+            if layer["name"] == "Tile Layer 1":
+                self.tile_map = layer["data"]
+            elif layer["name"] == "waypoints":
                 for obj in layer["objects"]:
                     waypoints_data = obj["polyline"]
                     self.process_waypoints(waypoints_data, (obj["x"], obj["y"]))
@@ -116,11 +119,24 @@ with open("assets/levels/tile_map_for_Chrono_construct..tmj") as file:
     world_data = json.load(file)
 
     
-def create_turret(mouse_postition):
+def create_turret(mouse_postiton):
     mouse_tile_x = mouse_postiton[0]// tile_size
     mouse_tile_y = mouse_postiton[1]// tile_size
-    turret = Turret(turret_image, mouse_tile_x, mouse_tile_y)
-    turret_group.add(turret)
+    #calculate the tile number
+    mouse_tile_number = (mouse_tile_y * cols) + mouse_tile_x
+    #to check if the tile is grass
+    if world.tile_map[mouse_tile_number] == 232:
+        #to check if there is not turret overlapping
+        space_free = True
+        for turret in turret_group:
+            if (mouse_tile_x, mouse_tile_y) == (turret.tile_x, turret.tile_y):
+                space_free = False
+        #if there is free space, create a turret
+        if space_free == True:
+
+            turret = Turret(turret_image, mouse_tile_x, mouse_tile_y)
+            turret_group.add(turret)
+
 
 #Create the world
 world = World(world_data, map_image)
@@ -159,7 +175,6 @@ while run:
     #draw the turret
     turret_group.draw(screen)
 
-    
     
     #event handling
     for event in py.event.get():
