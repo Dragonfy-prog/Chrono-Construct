@@ -2,6 +2,7 @@ import pygame as py
 from pygame.math import Vector2
 import math
 import json 
+from turret_data import turret_data
 
 py.init()
 
@@ -15,6 +16,7 @@ SC_HEIGHT = rows * tile_size
 FPS = 120
 
 #turret variables
+turret_levels = 4
 animation_steps = 8
 animation_delay = 15
 
@@ -91,10 +93,11 @@ class Enemy(py.sprite.Sprite):
 
 #the turret class
 class Turret(py.sprite.Sprite):
-    def __init__(self, sprite_sheet, tile_x, tile_y):
+    def __init__(self, sprite_sheets, tile_x, tile_y):
         py.sprite.Sprite.__init__(self)
-        self.range = 100
-        self.cooldown = 1500
+        self.upgrade_level = 1
+        self.range = turret_data[self.upgrade_level - 1].get("range")
+        self.cooldown = turret_data[self.upgrade_level - 1].get("cooldown")
         self.last_shot = py.time.get_ticks()
         self.selected = False
         self.target = None
@@ -108,8 +111,8 @@ class Turret(py.sprite.Sprite):
         self.y = (self.tile_y + 0.5) * tile_size
 
         #animations
-        self.sprite_sheet = sprite_sheet
-        self.animation_list = self.load_images()
+        self.sprite_sheets = sprite_sheets
+        self.animation_list = self.load_images(self.sprite_sheets[self.upgrade_level - 1])
         self.frame_index = 0
         self.update_time = py.time.get_ticks()
 
@@ -129,12 +132,12 @@ class Turret(py.sprite.Sprite):
         self.range_rect = self.range_image.get_rect()
         self.range_rect.center = self.rect.center
 
-    def load_images(self):
+    def load_images(self, sprite_sheet):
         #extract images
-        size = self.sprite_sheet.get_height()
+        size = sprite_sheet.get_height()
         animation_list = []
         for x in range(animation_steps):
-            temp_image = self.sprite_sheet.subsurface(x * size, 0, size, size)
+            temp_image = sprite_sheet.subsurface(x * size, 0, size, size)
             animation_list.append(temp_image)
         return animation_list
     
@@ -177,6 +180,23 @@ class Turret(py.sprite.Sprite):
                 #reset the cooldown
                 self.last_shot = py.time.get_ticks()
                 self.target = None
+    
+    def upgrade(self):
+        self.upgrade_level += 1
+        self.range = turret_data[self.upgrade_level - 1].get("range")
+        self.cooldown = turret_data[self.upgrade_level - 1].get("cooldown")
+        #update the image
+        self.animation_list = self.load_images(self.sprite_sheets[self.upgrade_level - 1])
+        self.og_image = self.animation_list[self.frame_index]
+
+        #upgrade range
+        self.range_image = py.Surface((self.range * 2, self.range * 2))
+        self.range_image.fill((0, 0, 0,))
+        self.range_image.set_colorkey((0, 0, 0))
+        py.draw.circle(self.range_image, (255, 0, 0), (self.range, self.range), self.range)
+        self.range_image.set_alpha(100)
+        self.range_rect = self.range_image.get_rect()
+        self.range_rect.center = self.rect.center
 
     def draw(self, surface):
         self.image = py.transform.rotate(self.og_image, self.angle - 90)
@@ -236,7 +256,10 @@ selected_turret = None
 #level map
 map_image = py.image.load("assets/levels/tile_map_for_Chrono_construct.png").convert_alpha()
 #turret spritesheet
-turret_sheet = py.image.load("assets/turrets/turret_1.png").convert_alpha()
+turret_spritesheets = []
+for x in range(1, turret_levels + 1):
+    turret_sheet = py.image.load(f"assets/turrets/turret_{x}.png").convert_alpha()
+    turret_spritesheets.append(turret_sheet)
 #turret
 turret_image = py.image.load("assets/turrets/turret.png").convert_alpha()
 #enemies
@@ -245,6 +268,7 @@ enemy_image = py.transform.scale(enemy_image, (100, 100))
 #buttons
 turret_buy_button = py.image.load("assets/buttons/buy_turret.png").convert_alpha()
 cancel_button = py.image.load("assets/buttons/cancel.png").convert_alpha()
+upgrade_button = py.image.load("assets/buttons/upgrade_turret.png").convert_alpha()
 #load the level data
 with open("assets/levels/tile_map_for_Chrono_construct..tmj") as file:
     world_data = json.load(file)
@@ -265,7 +289,7 @@ def create_turret(mouse_postiton):
         #if there is free space, create a turret
         if space_free == True:
 
-            turret = Turret(turret_sheet, mouse_tile_x, mouse_tile_y)
+            turret = Turret(turret_spritesheets, mouse_tile_x, mouse_tile_y)
             turret_group.add(turret)
 def select_turret(mouse_postiton):
     mouse_tile_x = mouse_postiton[0]// tile_size
@@ -294,6 +318,8 @@ enemy_group.add(enemy)
 #creating the buttons
 turret_button = Button(SC_WIDTH + 30, 120, turret_buy_button, True)
 cancel_button = Button(SC_WIDTH + 50, 180, cancel_button, True)
+upgrade_button = Button(SC_WIDTH + 5, 180, upgrade_button, True)
+
 #event loop
 run = True
 while run:
@@ -305,7 +331,7 @@ while run:
     enemy_group.update() 
     turret_group.update(enemy_group)
 
-    #hilight the selcted turret
+    #highlight the selcted turret
     if selected_turret:
         selected_turret.selected = True
     
@@ -338,6 +364,14 @@ while run:
 
         if cancel_button.draw(screen):
             placing_turret = False
+    # upgrade button for turret
+    if selected_turret:
+        if selected_turret.upgrade_level < turret_levels:
+            if upgrade_button.draw(screen):
+                selected_turret.upgrade()
+    
+
+
 
     
     #event handling
