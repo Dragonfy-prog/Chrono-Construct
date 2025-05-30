@@ -2,31 +2,52 @@ import pygame as py
 from pygame.math import Vector2
 import math
 import json 
-from turret_data import turret_data
 import random
 
+turret_data = [
+    {#1
+        "range": 150,
+        "cooldown": 1500,
+    },
+    {#2
+        "range": 200,
+        "cooldown": 1200,
+    },
+    {#3
+        "range": 250,
+        "cooldown": 900,
+    },
+    {#4
+        "range": 300,
+        "cooldown": 600,
+    },
+    {#5
+        "range": 350,
+        "cooldown": 300,
+    }
+]
 
 ENEMY_DATA = {
         "weak": {
-        "health": 20,
+        "health": 100,
         "speed": 2,
         
     },
         "medium": {
-        "health": 20,
-        "speed": 3,
+        "health": 200,
+        "speed": 5,
         
     },
         "strong": {
-        "health": 40,
-        "speed": 4,
+        "health": 400,
+        "speed": 7,
         
     }
 }
 
 ENEMY_SPAWN_DATA = [
     {#1
-        "weak" : 15,
+        "weak" : 1,
         "medium" : 0,
         "strong" : 0
     },
@@ -88,16 +109,18 @@ SIDE_PANEL = 300
 SC_WIDTH = cols * tile_size
 SC_HEIGHT = rows * tile_size
 FPS = 120
-HEALTH = 100
+HEALTH = 1
 MONEY = 500
+TOTAL_LEVELS = 10
 
 #enemy variables
 SPAWN_COOLDOWN = 500
 
 #turret variables
-buy_cost = 100
-upgrade_cost = 50
+buy_cost = 150
+upgrade_cost = 300
 kill_reward = 10
+level_complete_reward = 200
 turret_levels = 4
 animation_steps = 8
 animation_delay = 15
@@ -147,6 +170,9 @@ class Enemy(py.sprite.Sprite):
         self.target_waypoint = 1
         self.speed = ENEMY_DATA.get(enemy_type)["speed"]
         self.health = ENEMY_DATA.get(enemy_type)["health"]
+        self.killed_enemies = 0
+        self.missed_enemies = 0
+    
             
     def update(self, world):
         self.move(world)
@@ -157,6 +183,7 @@ class Enemy(py.sprite.Sprite):
         if self.target_waypoint >= len(self.waypoints):
             self.kill()
             world.health -= 1
+            world.missed_enemies += 1
             return
         
         
@@ -178,6 +205,7 @@ class Enemy(py.sprite.Sprite):
         self.rect.center = self.pos
     def check_alive(self, world):
         if self.health <= 0:
+            world.killed_enemies += 1
             world.money += kill_reward
             self.kill()
             
@@ -323,6 +351,8 @@ class World():
         self.image = map_image
         self.enemy_list = []
         self.spawned_enemies = 0
+        self.killed_enemies = 0
+        self.missed_enemies = 0
 
 
     def process_data(self):
@@ -349,7 +379,16 @@ class World():
         #randomize the enemy list
         random.shuffle(self.enemy_list)
 
+    def check_level_complete(self):
+        if (self.killed_enemies + self.missed_enemies) == len(self.enemy_list):
+            return True
 
+    def reset_level(self):
+        #reset the enemy variables
+        self.enemy_list = []
+        self.killed_enemies = 0
+        self.missed_enemies = 0
+        self.spawned_enemies = 0
     
     def draw(self, surface):
         surface.blit(self.image, (0, 0))
@@ -365,6 +404,8 @@ screen = py.display.set_mode((SC_WIDTH + SIDE_PANEL, SC_HEIGHT))
 py.display.set_caption("Chrono Construct")
 
 #game variables
+game_over = False
+game_outcome = 0
 level_started = False
 last_enemy_spawn = py.time.get_ticks()
 placing_turret = False
@@ -401,6 +442,8 @@ turret_buy_button = py.image.load("assets/buttons/buy_turret.png").convert_alpha
 cancel_button = py.image.load("assets/buttons/cancel.png").convert_alpha()
 upgrade_button = py.image.load("assets/buttons/upgrade_turret.png").convert_alpha()
 begin_button = py.image.load("assets/buttons/begin.png").convert_alpha()
+restart_button = py.image.load("assets/buttons/restart.png").convert_alpha()
+
 #load the level data
 with open("assets/levels/tile_map_for_Chrono_construct..tmj") as file:
     world_data = json.load(file)
@@ -462,6 +505,7 @@ turret_button = Button(SC_WIDTH + 30, 120, turret_buy_button, True)
 cancel_button = Button(SC_WIDTH + 50, 180, cancel_button, True)
 upgrade_button = Button(SC_WIDTH + 5, 180, upgrade_button, True)
 begin_button = Button(SC_WIDTH + 60, 300, begin_button, True)
+restart_button = Button(310, 300, restart_button, True)
 
 #event loop
 run = True
@@ -470,68 +514,114 @@ while run:
     #set the frame rate
     clock.tick(FPS)
 
-    #update the groups
-    enemy_group.update(world) 
-    turret_group.update(enemy_group)
+    if game_over == False:
+        #check to see if the game is over
+    
+        if world.health <= 0:
+            game_over = True
+            game_outcome = -1
+        #check if game is won
+        if world.level > TOTAL_LEVELS:
+            game_over = True
+            game_outcome = 1
 
-    #highlight the selcted turret
-    if selected_turret:
-        selected_turret.selected = True
+            
+        #update the groups
+
+        enemy_group.update(world) 
+        turret_group.update(enemy_group)
+
+        #highlight the selcted turret
+        if selected_turret:
+            selected_turret.selected = True
     
 
-    #fill the screen with white
-    screen.fill((255, 255, 255))
+        #fill the screen with white
+        screen.fill((255, 255, 255))
 
-    #draw the world
-    world.draw(screen)
+        #draw the world
+        world.draw(screen)
 
-    #draw the enemy
-    enemy_group.draw(screen)
+        #draw the enemy
+        enemy_group.draw(screen)
 
-    #draw the turret
-    for turret in turret_group:
-        turret.draw(screen)
+        #draw the turret
+        for turret in turret_group:
+            turret.draw(screen)
 
-    #draw the text
-    draw_text(str(world.health), text_font, (255, 255, 255), 0, 0)
-    draw_text(str(world.money), text_font, (255, 255, 255), 0, 30)
+        #draw the text
+        draw_text(str(world.health), text_font, (255, 255, 255), 0, 0)
+        draw_text(str(world.money), text_font, (255, 255, 255), 0, 30)
+        draw_text(str(world.level), text_font, (255, 255, 255), 0, 60)
 
-    #check for begining of level
-    if level_started == False:
-        if begin_button.draw(screen):
-            level_started = True
+
+     
+        
+        #check for begining of level
+        if level_started == False:
+            if begin_button.draw(screen):
+                level_started = True
+        else:
+        #spawn enemies
+            if py.time.get_ticks() - last_enemy_spawn > SPAWN_COOLDOWN:
+                if world.spawned_enemies < len(world.enemy_list):
+                    enemy_type = world.enemy_list[world.spawned_enemies]
+                    enemy = Enemy(enemy_type, world.waypoints, enemy_images)
+                    enemy_group.add(enemy)
+                    world.spawned_enemies += 1
+                    last_enemy_spawn = py.time.get_ticks()
+        #check if wave is complete            
+        if world.check_level_complete() == True:
+            world.money += level_complete_reward
+            world.level += 1
+            level_started = False
+            last_enemy_spawn = py.time.get_ticks()
+            world.reset_level()
+            world.process_eneimes()
+        
+
+        #draw the buttons
+        #button for placing turret
+        if turret_button.draw(screen):
+            placing_turret = True
+        #if placing turret then show cancel button
+        if placing_turret == True:
+            #show turret
+            cursor_rect = turret_image.get_rect()
+            cursor_postition = py.mouse.get_pos()
+            cursor_rect.center = cursor_postition
+            if cursor_postition[0] < SC_WIDTH:
+                screen.blit(turret_image, cursor_rect)
+
+            if cancel_button.draw(screen):
+                placing_turret = False
+        # upgrade button for turret
+        if selected_turret:
+            if selected_turret.upgrade_level < turret_levels:
+                if upgrade_button.draw(screen):
+                    if world.money >= upgrade_cost:
+                        selected_turret.upgrade()
+                        world.money -= upgrade_cost
     else:
-    #spawn enemies
-        if py.time.get_ticks() - last_enemy_spawn > SPAWN_COOLDOWN:
-            if world.spawned_enemies < len(world.enemy_list):
-                enemy_type = world.enemy_list[world.spawned_enemies]
-                enemy = Enemy(enemy_type, world.waypoints, enemy_images)
-                enemy_group.add(enemy)
-                world.spawned_enemies += 1
-                last_enemy_spawn = py.time.get_ticks()
-
-    #draw the buttons
-    #button for placing turret
-    if turret_button.draw(screen):
-        placing_turret = True
-    #if placing turret then show cancel button
-    if placing_turret == True:
-        #show turret
-        cursor_rect = turret_image.get_rect()
-        cursor_postition = py.mouse.get_pos()
-        cursor_rect.center = cursor_postition
-        if cursor_postition[0] < SC_WIDTH:
-            screen.blit(turret_image, cursor_rect)
-
-        if cancel_button.draw(screen):
+        py.draw.rect(screen, (0, 0, 0), (200, 200, 400,200), border_radius = 30 )
+        if game_outcome == -1:
+            draw_text("GAME OVER", large_font, (255, 0, 0), 310, 230)
+        elif game_outcome == 1:
+            draw_text("YOU WON", large_font, (0, 255, 0), 315, 230)
+            #restart level button
+        if restart_button.draw(screen):
+            game_over = False
+            level_started = False
             placing_turret = False
-    # upgrade button for turret
-    if selected_turret:
-        if selected_turret.upgrade_level < turret_levels:
-            if upgrade_button.draw(screen):
-                if world.money >= upgrade_cost:
-                    selected_turret.upgrade()
-                    world.money -= upgrade_cost
+            selected_turret = None
+            last_enemy_spawn = py.time.get_ticks()
+            world = World(world_data, map_image)
+            world.process_data()
+            world.process_eneimes()
+            #empty the groups
+            enemy_group.empty()
+            turret_group.empty()
+
     
 
 
