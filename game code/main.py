@@ -8,7 +8,7 @@ import random
 
 ENEMY_DATA = {
         "weak": {
-        "health": 10,
+        "health": 20,
         "speed": 2,
         
     },
@@ -88,14 +88,20 @@ SIDE_PANEL = 300
 SC_WIDTH = cols * tile_size
 SC_HEIGHT = rows * tile_size
 FPS = 120
+HEALTH = 100
+MONEY = 500
 
 #enemy variables
 SPAWN_COOLDOWN = 500
 
 #turret variables
+buy_cost = 100
+upgrade_cost = 50
+kill_reward = 10
 turret_levels = 4
 animation_steps = 8
 animation_delay = 15
+DAMAGE = 10
 
 #the button class
 class Button():
@@ -142,13 +148,15 @@ class Enemy(py.sprite.Sprite):
         self.speed = ENEMY_DATA.get(enemy_type)["speed"]
         self.health = ENEMY_DATA.get(enemy_type)["health"]
             
-    def update(self):
-        self.move()
+    def update(self, world):
+        self.move(world)
         self.rotate()
+        self.check_alive(world)
                
-    def move(self):
+    def move(self, world):
         if self.target_waypoint >= len(self.waypoints):
             self.kill()
+            world.health -= 1
             return
         
         
@@ -168,6 +176,12 @@ class Enemy(py.sprite.Sprite):
         self.image = py.transform.rotate(self.og_image, self.angle)
         self.rect = self.image.get_rect()
         self.rect.center = self.pos
+    def check_alive(self, world):
+        if self.health <= 0:
+            world.money += kill_reward
+            self.kill()
+            
+            
 
 #the turret class
 class Turret(py.sprite.Sprite):
@@ -220,6 +234,15 @@ class Turret(py.sprite.Sprite):
         return animation_list
     
     def update(self, enemy_group):
+        if self.target:
+            x_distance = enemy.pos[0] - self.x
+            y_distance = enemy.pos[1] - self.y
+            distance = math.sqrt(x_distance ** 2 + y_distance ** 2)
+            if distance > self.range or self.target.health <= 0:
+                self.target = None
+        if not self.target and py.time.get_ticks() - self.last_shot > self.cooldown:
+            self.pick_target(enemy_group)
+                
         #play animation for target selection
         if self.target:
             self.play_animation()
@@ -237,12 +260,15 @@ class Turret(py.sprite.Sprite):
         y_distance = 0
         #check distance to each enemey to see if they are in range
         for enemy in enemy_group:
-            x_distance = enemy.pos[0] - self.x
-            y_distance = enemy.pos[1] - self.y
-            distance = math.sqrt(x_distance ** 2 + y_distance ** 2)
-            if distance < self.range:
-                self.target = enemy
-                self.angle = math.degrees(math.atan2(-y_distance, x_distance))
+            if enemy.health >= 0:
+                x_distance = enemy.pos[0] - self.x
+                y_distance = enemy.pos[1] - self.y
+                distance = math.sqrt(x_distance ** 2 + y_distance ** 2)
+                if distance < self.range:
+                    self.target = enemy
+                    self.angle = math.degrees(math.atan2(-y_distance, x_distance))
+                    self.target.health -= DAMAGE
+                    break
                 
 
     def play_animation(self):
@@ -284,13 +310,13 @@ class Turret(py.sprite.Sprite):
         if self.selected:
             surface.blit(self.range_image, self.range_rect)
 
-
-
    
 #the world class
 class World():
     def __init__(self, data, map_image):
         self.level = 1
+        self.health = HEALTH
+        self.money = MONEY
         self.tile_map = []
         self.waypoints = []
         self.level_data = data 
@@ -339,6 +365,7 @@ screen = py.display.set_mode((SC_WIDTH + SIDE_PANEL, SC_HEIGHT))
 py.display.set_caption("Chrono Construct")
 
 #game variables
+level_started = False
 last_enemy_spawn = py.time.get_ticks()
 placing_turret = False
 selected_turret = None
@@ -373,11 +400,21 @@ enemy_images = {
 turret_buy_button = py.image.load("assets/buttons/buy_turret.png").convert_alpha()
 cancel_button = py.image.load("assets/buttons/cancel.png").convert_alpha()
 upgrade_button = py.image.load("assets/buttons/upgrade_turret.png").convert_alpha()
+begin_button = py.image.load("assets/buttons/begin.png").convert_alpha()
 #load the level data
 with open("assets/levels/tile_map_for_Chrono_construct..tmj") as file:
     world_data = json.load(file)
 
+#fonts
+text_font = py.font.SysFont("Times New Roman", 24, bold = True)
+large_font = py.font.SysFont("Times New Roman", 36)
     
+# output text on screen
+def draw_text(text, font, text_col, x, y):
+    img = font.render(text, True, text_col)
+    screen.blit(img, (x, y))
+
+
 def create_turret(mouse_postiton):
     mouse_tile_x = mouse_postiton[0]// tile_size
     mouse_tile_y = mouse_postiton[1]// tile_size
@@ -395,6 +432,9 @@ def create_turret(mouse_postiton):
 
             turret = Turret(turret_spritesheets, mouse_tile_x, mouse_tile_y)
             turret_group.add(turret)
+            #subtract the money
+            world.money -= buy_cost
+
 def select_turret(mouse_postiton):
     mouse_tile_x = mouse_postiton[0]// tile_size
     mouse_tile_y = mouse_postiton[1]// tile_size
@@ -421,6 +461,7 @@ turret_group = py.sprite.Group()
 turret_button = Button(SC_WIDTH + 30, 120, turret_buy_button, True)
 cancel_button = Button(SC_WIDTH + 50, 180, cancel_button, True)
 upgrade_button = Button(SC_WIDTH + 5, 180, upgrade_button, True)
+begin_button = Button(SC_WIDTH + 60, 300, begin_button, True)
 
 #event loop
 run = True
@@ -430,7 +471,7 @@ while run:
     clock.tick(FPS)
 
     #update the groups
-    enemy_group.update() 
+    enemy_group.update(world) 
     turret_group.update(enemy_group)
 
     #highlight the selcted turret
@@ -451,14 +492,23 @@ while run:
     for turret in turret_group:
         turret.draw(screen)
 
+    #draw the text
+    draw_text(str(world.health), text_font, (255, 255, 255), 0, 0)
+    draw_text(str(world.money), text_font, (255, 255, 255), 0, 30)
+
+    #check for begining of level
+    if level_started == False:
+        if begin_button.draw(screen):
+            level_started = True
+    else:
     #spawn enemies
-    if py.time.get_ticks() - last_enemy_spawn > SPAWN_COOLDOWN:
-        if world.spawned_enemies < len(world.enemy_list):
-            enemy_type = world.enemy_list[world.spawned_enemies]
-            enemy = Enemy(enemy_type, world.waypoints, enemy_images)
-            enemy_group.add(enemy)
-            world.spawned_enemies += 1
-            last_enemy_spawn = py.time.get_ticks()
+        if py.time.get_ticks() - last_enemy_spawn > SPAWN_COOLDOWN:
+            if world.spawned_enemies < len(world.enemy_list):
+                enemy_type = world.enemy_list[world.spawned_enemies]
+                enemy = Enemy(enemy_type, world.waypoints, enemy_images)
+                enemy_group.add(enemy)
+                world.spawned_enemies += 1
+                last_enemy_spawn = py.time.get_ticks()
 
     #draw the buttons
     #button for placing turret
@@ -479,7 +529,9 @@ while run:
     if selected_turret:
         if selected_turret.upgrade_level < turret_levels:
             if upgrade_button.draw(screen):
-                selected_turret.upgrade()
+                if world.money >= upgrade_cost:
+                    selected_turret.upgrade()
+                    world.money -= upgrade_cost
     
 
 
@@ -499,7 +551,8 @@ while run:
                 selected_turret = None
                 clear_selection()
                 if placing_turret == True:
-                    create_turret(mouse_postiton)
+                    if world.money >= buy_cost:
+                        create_turret(mouse_postiton)
                 else:
                     selected_turret = select_turret(mouse_postiton)
         
