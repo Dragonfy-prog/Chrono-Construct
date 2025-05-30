@@ -3,6 +3,80 @@ from pygame.math import Vector2
 import math
 import json 
 from turret_data import turret_data
+import random
+
+
+ENEMY_DATA = {
+        "weak": {
+        "health": 10,
+        "speed": 2,
+        
+    },
+        "medium": {
+        "health": 20,
+        "speed": 3,
+        
+    },
+        "strong": {
+        "health": 40,
+        "speed": 4,
+        
+    }
+}
+
+ENEMY_SPAWN_DATA = [
+    {#1
+        "weak" : 15,
+        "medium" : 0,
+        "strong" : 0
+    },
+    {#2
+        "weak" : 30,
+        "medium" : 0,
+        "strong" : 0
+    },
+    {#3
+        "weak" : 20,
+        "medium" : 5,
+        "strong" : 0
+    },
+    {#4
+        "weak" : 5,
+        "medium" : 15,
+        "strong" : 0
+    },
+    {#5
+        "weak" : 5,
+        "medium" : 20,
+        "strong" : 0
+    },
+    {#6
+        "weak" : 0,
+        "medium" : 20,
+        "strong" : 5
+    },
+    {#7
+        "weak" : 0,
+        "medium" : 15,
+        "strong" : 10
+    },
+    {#8
+        "weak" : 0,
+        "medium" : 10,
+        "strong" : 15
+    },
+    {#9
+        "weak" : 0,
+        "medium" : 5,
+        "strong" : 20
+    },
+    {#10
+        "weak" : 0,
+        "medium" : 0,
+        "strong" : 25
+    }
+    
+]
 
 py.init()
 
@@ -14,6 +88,9 @@ SIDE_PANEL = 300
 SC_WIDTH = cols * tile_size
 SC_HEIGHT = rows * tile_size
 FPS = 120
+
+#enemy variables
+SPAWN_COOLDOWN = 500
 
 #turret variables
 turret_levels = 4
@@ -52,9 +129,9 @@ class Button():
 
 #the enemy class
 class Enemy(py.sprite.Sprite):
-    def __init__(self, waypoints, image):
+    def __init__(self, enemy_type, waypoints, images):
         py.sprite.Sprite.__init__(self)
-        self.og_image = image
+        self.og_image = images.get(enemy_type)
         self.angle = 0
         self.image = py.transform.rotate(self.og_image, self.angle)
         self.waypoints = waypoints
@@ -62,7 +139,8 @@ class Enemy(py.sprite.Sprite):
         self.rect.center = waypoints[0]
         self.pos = Vector2(self.waypoints[0])
         self.target_waypoint = 1
-        self.speed = 2
+        self.speed = ENEMY_DATA.get(enemy_type)["speed"]
+        self.health = ENEMY_DATA.get(enemy_type)["health"]
             
     def update(self):
         self.move()
@@ -162,7 +240,7 @@ class Turret(py.sprite.Sprite):
             x_distance = enemy.pos[0] - self.x
             y_distance = enemy.pos[1] - self.y
             distance = math.sqrt(x_distance ** 2 + y_distance ** 2)
-            if distance > self.range:
+            if distance < self.range:
                 self.target = enemy
                 self.angle = math.degrees(math.atan2(-y_distance, x_distance))
                 
@@ -212,10 +290,14 @@ class Turret(py.sprite.Sprite):
 #the world class
 class World():
     def __init__(self, data, map_image):
+        self.level = 1
         self.tile_map = []
         self.waypoints = []
         self.level_data = data 
         self.image = map_image
+        self.enemy_list = []
+        self.spawned_enemies = 0
+
 
     def process_data(self):
         for layer in self.level_data["layers"]:
@@ -231,6 +313,15 @@ class World():
             temp_x = point.get("x") + offset[0]
             temp_y = point.get("y") + offset[1]
             self.waypoints.append((temp_x, temp_y))
+    
+    def process_eneimes(self):
+        enemies = ENEMY_SPAWN_DATA[self.level - 1]
+        for enemy_type in enemies:
+            eneimes_to_spawn = enemies[enemy_type]
+            for enemy in range(eneimes_to_spawn):
+                self.enemy_list.append(enemy_type)
+        #randomize the enemy list
+        random.shuffle(self.enemy_list)
 
 
     
@@ -248,6 +339,7 @@ screen = py.display.set_mode((SC_WIDTH + SIDE_PANEL, SC_HEIGHT))
 py.display.set_caption("Chrono Construct")
 
 #game variables
+last_enemy_spawn = py.time.get_ticks()
 placing_turret = False
 selected_turret = None
 
@@ -263,8 +355,20 @@ for x in range(1, turret_levels + 1):
 #turret
 turret_image = py.image.load("assets/turrets/turret.png").convert_alpha()
 #enemies
+
 enemy_image = py.image.load("assets/enemies/towerDefense_tilesheet - enemy.PNG").convert_alpha()
 enemy_image = py.transform.scale(enemy_image, (100, 100))
+enemy_image_2 = py.image.load("assets/enemies/enemy_2.png").convert_alpha()
+enemy_image_2 = py.transform.scale(enemy_image_2, (100, 100))
+enemy_image_3 = py.image.load("assets/enemies/enemy_3.png").convert_alpha()
+enemy_image_3 = py.transform.scale(enemy_image_3, (100, 100))
+
+enemy_images = { 
+    "weak" : enemy_image,
+    "medium" : enemy_image_2,
+    "strong":  enemy_image_3,
+}
+
 #buttons
 turret_buy_button = py.image.load("assets/buttons/buy_turret.png").convert_alpha()
 cancel_button = py.image.load("assets/buttons/cancel.png").convert_alpha()
@@ -305,15 +409,13 @@ def clear_selection():
 #Create the world
 world = World(world_data, map_image)
 world.process_data()
+world.process_eneimes()
 
 #groups
 enemy_group = py.sprite.Group()
 turret_group = py.sprite.Group()
 
 
-#enemy initialization
-enemy = Enemy(world.waypoints, enemy_image)
-enemy_group.add(enemy)
 
 #creating the buttons
 turret_button = Button(SC_WIDTH + 30, 120, turret_buy_button, True)
@@ -348,6 +450,15 @@ while run:
     #draw the turret
     for turret in turret_group:
         turret.draw(screen)
+
+    #spawn enemies
+    if py.time.get_ticks() - last_enemy_spawn > SPAWN_COOLDOWN:
+        if world.spawned_enemies < len(world.enemy_list):
+            enemy_type = world.enemy_list[world.spawned_enemies]
+            enemy = Enemy(enemy_type, world.waypoints, enemy_images)
+            enemy_group.add(enemy)
+            world.spawned_enemies += 1
+            last_enemy_spawn = py.time.get_ticks()
 
     #draw the buttons
     #button for placing turret
